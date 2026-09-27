@@ -97,10 +97,27 @@ function dateFromDayNumber(n) {
   return new Date(n * 86_400_000).toISOString().slice(0, 10)
 }
 
-/** ยอดขายแยกสาขา: group ตาม branch แล้วเรียงยอดขายจากมากไปน้อย → [{ branch, sales }] */
+/**
+ * ยอดขายแยกสาขา: group ตาม branch แล้วเรียงยอดขายจากมากไปน้อย → [{ branch, sales, share }]
+ * share = ยอดขายสาขา ÷ ยอดขายรวม (0–1)
+ */
 export function salesByBranch(rows) {
+  const total = totalSales(rows)
   return [...sumBy(rows, (r) => r.branch)]
-    .map(([branch, sales]) => ({ branch, sales }))
+    .map(([branch, sales]) => ({ branch, sales, share: total === 0 ? 0 : sales / total }))
+    .sort((a, b) => b.sales - a.sales)
+}
+
+/**
+ * สัดส่วนยอดขายตามวิธีชำระเงิน → [{ method, sales, share }] เรียงมากไปน้อย
+ * - sales = ผลรวม lineTotal ของแถวที่ใช้วิธีชำระนั้น
+ * - share = sales ÷ ยอดขายรวม (0–1)
+ * หมายเหตุ: บิลเดียวอาจมีหลายวิธีชำระ จึงคิดระดับแถว ไม่ใช่ระดับบิล
+ */
+export function salesByPaymentMethod(rows) {
+  const total = totalSales(rows)
+  return [...sumBy(rows, (r) => r.payment_method)]
+    .map(([method, sales]) => ({ method, sales, share: total === 0 ? 0 : sales / total }))
     .sort((a, b) => b.sales - a.sales)
 }
 
@@ -116,6 +133,7 @@ export function kpis(rows) {
 
 const numberFmt = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 0 })
 const bahtFmt = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+const percentFmt = new Intl.NumberFormat('th-TH', { style: 'percent', maximumFractionDigits: 0 })
 const compactFmt = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFractionDigits: 1 })
 
 /** ตัวเลขมีจุลภาค เช่น 12,345 */
@@ -126,6 +144,11 @@ export function formatNumber(n) {
 /** จำนวนเงิน เช่น ฿12,345.50 */
 export function formatBaht(n) {
   return `฿${bahtFmt.format(n)}`
+}
+
+/** สัดส่วน 0–1 → เปอร์เซ็นต์ เช่น 0.48 → 48% */
+export function formatPercent(n) {
+  return percentFmt.format(n)
 }
 
 /** จำนวนเงินแบบย่อสำหรับแกนกราฟ เช่น ฿12K */

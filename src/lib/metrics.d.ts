@@ -31,9 +31,11 @@ export function withMovingAverage(
   daily: { date: string; sales: number }[],
   windowDays?: number,
 ): { date: string; sales: number; avg: number | null }[]
-export function salesByBranch(rows: SaleRow[]): { branch: string; sales: number }[]
+export function salesByBranch(rows: SaleRow[]): { branch: string; sales: number; share: number }[]
+export function salesByPaymentMethod(rows: SaleRow[]): { method: string; sales: number; share: number }[]
 export function kpis(rows: SaleRow[]): Kpis
 export function formatNumber(n: number): string
 export function formatBaht(n: number): string
+export function formatPercent(n: number): string
 export function formatBahtCompact(n: number): string
 export function formatThaiDate(isoDate: string, opts?: { year?: 'full' | 'short' | 'none' }): string

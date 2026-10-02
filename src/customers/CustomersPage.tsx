@@ -1,6 +1,6 @@
 // แท็บ "ข้อมูลลูกค้า": ภาพรวมสมาชิกจาก customers.csv เลือกช่วงวันที่ได้
 import { useEffect, useMemo, useState } from 'react'
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { formatBaht, formatNumber, formatPercent, formatThaiDate, type SaleRow } from '../lib/metrics.js'
 import {
   AGE_GROUPS,
@@ -18,6 +18,7 @@ import FilterBar from '../components/FilterBar.tsx'
 import { AMBER, AXIS_TICK, BLUE, GRID_COLOR, PINK, PURPLE, TEAL, TOOLTIP_STYLE, useIsMobile } from '../components/theme.ts'
 
 const NEVER_COLOR = '#f3b5d2' // สมาชิกที่ยังไม่เคยซื้อ (ชมพูจาง)
+const PARTIAL_COLOR = '#c9bcd9' // เส้นประของเดือนที่ไม่ครบเดือน
 const GENDER_COLORS: Record<string, string> = { หญิง: PINK, ชาย: BLUE, ไม่ระบุ: '#b9acc9' }
 
 /** 'YYYY-MM' → 'เม.ย. 68' */
@@ -25,99 +26,173 @@ const monthLabel = (m: string) => formatThaiDate(`${m}-01`, { year: 'short' }).r
 
 const SELECT_CLASS = 'rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-stone-700 focus:border-[#e0428f] focus:outline-none'
 
-/** กราฟสัดส่วนการสมัครสมาชิกแต่ละเดือน เรียงน้อยไปมาก พร้อมตัวกรองเพศ / ช่วงอายุของกราฟนี้เอง */
-function JoinShareCard({ customers, range, partialMonths }: { customers: Customer[]; range: DateRange; partialMonths: string[] }) {
+/** dropdown กรองเพศ + ช่วงอายุ ('' = ทั้งหมด) ใช้ในหัวการ์ดกราฟ */
+function GenderAgeFilters({
+  label,
+  gender,
+  age,
+  onGender,
+  onAge,
+}: {
+  label: string
+  gender: string
+  age: string
+  onGender: (g: string) => void
+  onAge: (a: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <select aria-label={`กรองเพศ (${label})`} className={SELECT_CLASS} value={gender} onChange={(e) => onGender(e.target.value)}>
+        <option value="">ทุกเพศ</option>
+        {GENDERS.map((g) => (
+          <option key={g} value={g}>{g}</option>
+        ))}
+      </select>
+      <select aria-label={`กรองช่วงอายุ (${label})`} className={SELECT_CLASS} value={age} onChange={(e) => onAge(e.target.value)}>
+        <option value="">ทุกช่วงอายุ</option>
+        {AGE_GROUPS.map((a) => (
+          <option key={a} value={a}>{a}</option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+const whoLabel = (gender: string, age: string) => [gender || 'ทุกเพศ', age ? `อายุ ${age}` : 'ทุกช่วงอายุ'].join(' · ')
+
+/** ความชัน (คน/เดือน) ของเส้นตรงที่ fit ได้ดีที่สุด (least squares) กับจำนวนสมัครรายเดือน */
+function slope(values: number[]) {
+  const n = values.length
+  if (n < 2) return 0
+  const xMean = (n - 1) / 2
+  const yMean = values.reduce((a, b) => a + b, 0) / n
+  let num = 0
+  let den = 0
+  values.forEach((y, x) => {
+    num += (x - xMean) * (y - yMean)
+    den += (x - xMean) ** 2
+  })
+  return num / den
+}
+
+/**
+ * กราฟแนวโน้มการสมัครสมาชิกรายเดือน (เรียงตามเวลา) พร้อมตัวกรองเพศ / ช่วงอายุ
+ * - เส้นทึบ = เดือนที่ครบ · เส้นประ = เดือนที่ไม่ครบเดือน (ต่อจากจุดข้างเคียง)
+ * - เส้นค่าเฉลี่ย 3 เดือน คิดจากเดือนที่ครบเท่านั้น
+ */
+function JoinTrendCard({ customers, range, partialMonths }: { customers: Customer[]; range: DateRange; partialMonths: string[] }) {
   const [gender, setGender] = useState('')
   const [age, setAge] = useState('')
   const isMobile = useIsMobile()
   const { total, months } = useMemo(() => joinShareByMonth(customers, range, gender, age), [customers, range, gender, age])
-  const full = months.filter((m) => !partialMonths.includes(m.month)) // เดือนครบ ใช้สรุปน้อยสุด/มากสุด
-  const lowest = full[0]
-  const highest = full[full.length - 1]
-  const avg = months.length ? total / months.length : 0
+
+  const data = useMemo(() => {
+    const byTime = [...months].sort((a, b) => a.month.localeCompare(b.month))
+    const isPartial = byTime.map((m) => partialMonths.includes(m.month))
+    return byTime.map((m, i) => {
+      const window = byTime.slice(Math.max(0, i - 2), i + 1)
+      const windowFull = window.length === 3 && [i - 2, i - 1, i].every((k) => !isPartial[k])
+      return {
+        month: m.month,
+        count: m.count,
+        full: isPartial[i] ? null : m.count,
+        // จุดเดือนไม่ครบ + จุดข้างเคียง เพื่อให้เส้นประต่อกับเส้นทึบ
+        partial: isPartial[i] || isPartial[i - 1] || isPartial[i + 1] ? m.count : null,
+        avg3: windowFull ? window.reduce((sum, w) => sum + w.count, 0) / 3 : null,
+      }
+    })
+  }, [months, partialMonths])
+
+  const fullPoints = data.filter((d) => d.full !== null)
+  const perMonth = slope(fullPoints.map((d) => d.count))
+  const first = fullPoints[0]
+  const last = fullPoints[fullPoints.length - 1]
+  const change = first && last && first !== last && first.count ? (last.count - first.count) / first.count : null
   const tick = { ...AXIS_TICK, fontSize: isMobile ? 11 : 12 }
-  const who = [gender || 'ทุกเพศ', age ? `อายุ ${age}` : 'ทุกช่วงอายุ'].join(' · ')
+  const trendText = Math.abs(perMonth) < 0.05 ? 'ทรงตัว' : `${perMonth > 0 ? '+' : ''}${perMonth.toFixed(1)} คน/เดือน`
+  const tone = (x: number) => (x >= 0 ? 'text-emerald-700' : 'text-red-700')
+  const stats = [
+    { label: 'แนวโน้ม', value: trendText, tone: tone(perMonth) },
+    ...(change !== null
+      ? [{ label: `${monthLabel(first.month)} → ${monthLabel(last.month)}`, value: `${change >= 0 ? '+' : ''}${formatPercent(change)}`, tone: tone(change) }]
+      : []),
+    { label: 'สมาชิกที่ตรงเงื่อนไข', value: `${formatNumber(total)} คน`, tone: 'text-stone-800' },
+  ]
 
   return (
     <Card
-      title="สัดส่วนการสมัครสมาชิกแต่ละเดือน"
-      subtitle={`เรียงจากน้อยไปมาก · ${who}`}
-      action={
-        <div className="flex flex-wrap gap-2">
-          <select aria-label="กรองเพศ" className={SELECT_CLASS} value={gender} onChange={(e) => setGender(e.target.value)}>
-            <option value="">ทุกเพศ</option>
-            {GENDERS.map((g) => (
-              <option key={g} value={g}>{g}</option>
-            ))}
-          </select>
-          <select aria-label="กรองช่วงอายุ" className={SELECT_CLASS} value={age} onChange={(e) => setAge(e.target.value)}>
-            <option value="">ทุกช่วงอายุ</option>
-            {AGE_GROUPS.map((a) => (
-              <option key={a} value={a}>{a}</option>
-            ))}
-          </select>
-        </div>
-      }
+      title="แนวโน้มการสมัครสมาชิกรายเดือน"
+      subtitle={`เรียงตามเวลา · ${whoLabel(gender, age)}`}
+      action={<GenderAgeFilters label="แนวโน้ม" gender={gender} age={age} onGender={setGender} onAge={setAge} />}
     >
       {total === 0 ? (
         <p className="py-12 text-center text-sm text-stone-500">ไม่มีสมาชิกที่ตรงกับเงื่อนไขนี้</p>
       ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
-          <div className="lg:col-span-3" style={{ height: Math.max(160, months.length * 26 + 24) }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={months} layout="vertical" margin={{ top: 0, right: 48, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="joinShareFill" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor={PURPLE} />
-                    <stop offset="100%" stopColor={PINK} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke={GRID_COLOR} horizontal={false} />
-                <XAxis type="number" tickFormatter={(v: number) => formatPercent(v)} tick={tick} tickLine={false} axisLine={false} />
-                <YAxis type="category" dataKey="month" tickFormatter={monthLabel} tick={tick} tickLine={false} axisLine={false} width={64} interval={0} />
-                <Tooltip
-                  {...TOOLTIP_STYLE}
-                  cursor={{ fill: '#faf5ff' }}
-                  labelFormatter={(m) => monthLabel(String(m)) + (partialMonths.includes(String(m)) ? ' (ไม่ครบเดือน)' : '')}
-                  formatter={(v, _name, item) => [`${(Number(v) * 100).toFixed(1)}% · ${formatNumber(item.payload.count)} คน`, 'สัดส่วน']}
-                />
-                <Bar
-                  dataKey="share"
-                  radius={[0, 4, 4, 0]}
-                  maxBarSize={18}
-                  isAnimationActive={false}
-                  label={{ position: 'right', fill: '#7a7389', fontSize: 11, formatter: (v: unknown) => `${(Number(v) * 100).toFixed(1)}%` }}
-                >
-                  {months.map((m) => (
-                    <Cell key={m.month} fill={partialMonths.includes(m.month) ? NEVER_COLOR : 'url(#joinShareFill)'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          <dl className="grid grid-cols-2 content-start gap-3 lg:grid-cols-1">
-            {[
-              { label: 'สมาชิกที่ตรงเงื่อนไข', value: `${formatNumber(total)} คน` },
-              { label: 'เฉลี่ยต่อเดือน', value: `${avg < 10 ? avg.toFixed(1) : formatNumber(Math.round(avg))} คน (${formatPercent(1 / (months.length || 1))})` },
-              lowest && { label: 'เดือนที่สมัครน้อยสุด', value: `${monthLabel(lowest.month)} · ${(lowest.share * 100).toFixed(1)}%` },
-              highest && { label: 'เดือนที่สมัครมากสุด', value: `${monthLabel(highest.month)} · ${(highest.share * 100).toFixed(1)}%` },
-            ]
-              .filter((x): x is { label: string; value: string } => Boolean(x))
-              .map((x) => (
-                <div key={x.label} className="rounded-xl bg-[#faf5ff] px-3 py-2.5">
+        <>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <dl className="flex flex-wrap gap-2">
+              {stats.map((x) => (
+                <div key={x.label} className="rounded-xl bg-[#faf5ff] px-3 py-2">
                   <dt className="text-xs text-stone-500">{x.label}</dt>
-                  <dd className="mt-0.5 text-sm font-semibold tabular-nums text-stone-800">{x.value}</dd>
+                  <dd className={`text-sm font-semibold tabular-nums ${x.tone}`}>{x.value}</dd>
                 </div>
               ))}
-          </dl>
-        </div>
-      )}
-      {partialMonths.length > 0 && total > 0 && (
-        <p className="mt-3 text-xs text-stone-500">
-          แท่งสีจาง = {partialMonths.map(monthLabel).join(', ')} ไม่ครบเดือน จึงมักอยู่บนสุด (น้อยสุด) ไม่ได้แปลว่าคนสมัครน้อยลงจริง ·
-          เดือนน้อยสุด/มากสุดด้านขวานับเฉพาะเดือนที่ครบ
-        </p>
+            </dl>
+            <div className="flex flex-wrap items-center gap-4">
+              <LegendDot color={PINK} label="สมัครใหม่" line />
+              <LegendDot color={PURPLE} label="ค่าเฉลี่ย 3 เดือน" line />
+              {partialMonths.length > 0 && <LegendDot color={PARTIAL_COLOR} label="ไม่ครบเดือน" line />}
+            </div>
+          </div>
+          <div className="h-64 sm:h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={data} margin={isMobile ? { top: 8, right: 8, bottom: 0, left: -16 } : { top: 8, right: 16, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={PINK} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={PINK} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+                <XAxis dataKey="month" tickFormatter={monthLabel} tick={tick} tickLine={false} axisLine={false} minTickGap={isMobile ? 12 : 4} />
+                <YAxis tick={tick} tickLine={false} axisLine={false} width={44} allowDecimals={false} />
+                <Tooltip
+                  {...TOOLTIP_STYLE}
+                  labelFormatter={(m) => monthLabel(String(m)) + (partialMonths.includes(String(m)) ? ' (ไม่ครบเดือน)' : '')}
+                  formatter={(v, name) => [`${Number(v).toFixed(name === 'ค่าเฉลี่ย 3 เดือน' ? 1 : 0)} คน`, name === 'partial' ? 'สมัครใหม่' : name]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="full"
+                  name="สมัครใหม่"
+                  stroke={PINK}
+                  strokeWidth={2.5}
+                  fill="url(#trendFill)"
+                  dot={{ r: 3, fill: PINK, stroke: '#fff', strokeWidth: 1.5 }}
+                  activeDot={{ r: 5 }}
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="partial"
+                  name="partial"
+                  stroke={PARTIAL_COLOR}
+                  strokeWidth={2}
+                  strokeDasharray="5 4"
+                  dot={false}
+                  activeDot={false}
+                  tooltipType="none"
+                  isAnimationActive={false}
+                />
+                <Line type="monotone" dataKey="avg3" name="ค่าเฉลี่ย 3 เดือน" stroke={PURPLE} strokeWidth={2} dot={false} isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="mt-3 text-xs text-stone-500">
+            แนวโน้ม = ความชันของเส้นตรงที่ fit กับจำนวนสมัครของเดือนที่ครบ
+            {partialMonths.length > 0 && ` · ${partialMonths.map(monthLabel).join(', ')} ไม่ครบเดือน แสดงเป็นเส้นประและไม่นำมาคิดแนวโน้ม`}
+          </p>
+        </>
       )}
     </Card>
   )
@@ -284,7 +359,7 @@ export default function CustomersPage({ rows }: { rows: SaleRow[] }) {
         </Card>
       </div>
 
-      <JoinShareCard customers={customers!} range={range} partialMonths={report.partialMonths} />
+      <JoinTrendCard customers={customers!} range={range} partialMonths={report.partialMonths} />
 
       {/* สาขาประจำ */}
       <Card title="สมาชิกตามสาขาประจำ" subtitle="home_branch_id เทียบกับพฤติกรรมการซื้อจริง">

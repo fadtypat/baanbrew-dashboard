@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import Papa from 'papaparse'
 import {
   Area,
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Line,
   Pie,
@@ -22,60 +24,32 @@ import {
   formatThaiDate,
   kpis,
   parseSales,
+  prepareRows,
   salesByBranch,
   salesByPaymentMethod,
   withMovingAverage,
   type SaleRow,
 } from './lib/metrics.js'
+import Lab2Page from './lab2/Lab2Page.jsx'
+import CustomersPage from './customers/CustomersPage.tsx'
+import { Card, GradientTile, LegendDot } from './components/ui.tsx'
+import FilterBar from './components/FilterBar.tsx'
+import type { DateRange } from './lib/customerMetrics.ts'
+import { AMBER, AXIS_TICK, BLUE, GRID_COLOR, MUTED, PINK, PURPLE, TEAL, TOOLTIP_STYLE, useIsMobile } from './components/theme.ts'
 
-// โทนสีหลัก: ชมพู → ม่วง → ฟ้า → ส้มเหลือง
-const PINK = '#e0428f'
-const PURPLE = '#7c4dff'
-const BLUE = '#2f8fe0'
-const AMBER = '#f0a020'
-const TEAL = '#12a594'
+type Product = { product_id: string; product_name: string; category: string; price: string; cost: string; launched_date: string }
+
+// แท็บของหน้า เก็บใน URL hash (#lab2) เพื่อให้รีเฟรชแล้วยังอยู่แท็บเดิม
+const TABS = [
+  { id: 'overview', label: 'ภาพรวม' },
+  { id: 'customers', label: 'ข้อมูลลูกค้า' },
+  { id: 'lab2', label: 'Lab 2.2 · ซ่อมกราฟ' },
+] as const
+type TabId = (typeof TABS)[number]['id']
+const tabFromHash = (): TabId => TABS.find((t) => `#${t.id}` === window.location.hash)?.id ?? 'overview'
+
 const PAYMENT_COLORS = [PINK, PURPLE, BLUE, AMBER, TEAL] // ลำดับคงที่ ตามอันดับยอดขาย (5 วิธีชำระ)
-const DAILY_COLOR = '#ddd3ea' // เส้นรายวันแบบจาง
-const AXIS_TICK = { fill: '#9a93a8', fontSize: 12 }
-const GRID_COLOR = '#efeaf5'
-const TOOLTIP_STYLE = {
-  contentStyle: {
-    border: 'none',
-    borderRadius: 10,
-    boxShadow: '0 8px 24px rgba(60, 30, 90, 0.15)',
-    fontFamily: 'Prompt, sans-serif',
-    fontSize: 13,
-  },
-}
-
-// true เมื่อจอแคบกว่า breakpoint sm ของ Tailwind (640px) — ใช้ปรับค่าที่ Recharts ต้องรับเป็น prop
-function useIsMobile(query = '(max-width: 639px)') {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
-  useEffect(() => {
-    const mql = window.matchMedia(query)
-    const onChange = () => setMatches(mql.matches)
-    mql.addEventListener('change', onChange)
-    return () => mql.removeEventListener('change', onChange)
-  }, [query])
-  return matches
-}
-
-/* ---------- ไอคอน (SVG inline) ---------- */
-
-const ICONS = {
-  sales: 'M3 17l6-6 4 4 8-8M14 7h7v7',
-  bill: 'M6 2h12v20l-3-2-3 2-3-2-3 2V2zm3 6h6M9 12h6M9 16h4',
-  avg: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
-  member: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75',
-} as const
-
-function Icon({ name, className = 'h-5 w-5' }: { name: keyof typeof ICONS; className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
-      <path d={ICONS[name]} />
-    </svg>
-  )
-}
+const DAILY_COLOR = MUTED // เส้นรายวันแบบจาง
 
 /* ---------- โครงหน้า ---------- */
 
@@ -88,81 +62,16 @@ function Logo() {
   )
 }
 
-/* ---------- การ์ด ---------- */
-
-function GradientTile({
-  label,
-  value,
-  hint,
-  icon,
-  gradient,
-}: {
-  label: string
-  value: string
-  hint?: string
-  icon: keyof typeof ICONS
-  gradient: string
-}) {
-  return (
-    <div className={`relative min-w-0 overflow-hidden rounded-2xl p-4 text-white shadow-lg sm:p-5 ${gradient}`}>
-      {/* วงกลมตกแต่ง */}
-      <span className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10" />
-      <span className="pointer-events-none absolute -bottom-10 right-8 h-24 w-24 rounded-full bg-white/10" />
-      <div className="relative flex items-center gap-2">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20">
-          <Icon name={icon} className="h-4 w-4" />
-        </span>
-        <p className="truncate text-xs font-medium text-white/90 sm:text-sm">{label}</p>
-      </div>
-      <p className="relative mt-3 truncate text-xl font-semibold tabular-nums drop-shadow-sm sm:text-2xl lg:text-3xl">
-        {value}
-      </p>
-      {hint && <p className="relative mt-1 truncate text-[11px] text-white/80 sm:text-xs">{hint}</p>}
-    </div>
-  )
-}
-
-function Card({
-  title,
-  subtitle,
-  action,
-  className = '',
-  children,
-}: {
-  title: string
-  subtitle?: string
-  action?: React.ReactNode
-  className?: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className={`flex flex-col rounded-2xl bg-white p-4 shadow-[0_4px_24px_rgba(60,30,90,0.06)] sm:p-6 ${className}`}>
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold text-stone-800 sm:text-base">{title}</h2>
-          {subtitle && <p className="text-xs text-stone-400">{subtitle}</p>}
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function LegendDot({ color, label, line }: { color: string; label: string; line?: boolean }) {
-  return (
-    <span className="flex items-center gap-1.5 text-xs text-stone-500">
-      <span className={line ? 'h-0.5 w-4 rounded' : 'h-2.5 w-2.5 rounded-full'} style={{ background: color }} />
-      {label}
-    </span>
-  )
-}
-
 /* ---------- หน้า Dashboard ---------- */
 
 function App() {
   const [rows, setRows] = useState<SaleRow[] | null>(null)
+  const [products, setProducts] = useState<Product[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<TabId>(tabFromHash)
+  // ตัวกรองหน้าภาพรวม: ช่วงวันที่ (null = ทั้งหมด) และสาขา ('' = ทุกสาขา)
+  const [picked, setPicked] = useState<DateRange | null>(null)
+  const [branch, setBranch] = useState('')
   const isMobile = useIsMobile()
 
   useEffect(() => {
@@ -175,10 +84,49 @@ function App() {
       .catch((e: Error) => setError(e.message))
   }, [])
 
-  const summary = useMemo(() => (rows ? kpis(rows) : null), [rows])
-  const daily = useMemo(() => (rows ? withMovingAverage(dailySales(rows), 7) : []), [rows])
-  const branches = useMemo(() => (rows ? salesByBranch(rows) : []), [rows])
-  const payments = useMemo(() => (rows ? salesByPaymentMethod(rows) : []), [rows])
+  // products.csv ใช้แสดงชื่อเมนูในหน้า Lab 2.2 เท่านั้น
+  useEffect(() => {
+    Papa.parse<Product>('/products.csv', {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.replace(/^﻿/, '').trim(),
+      complete: ({ data }) => setProducts(data),
+      error: (e) => setError(`โหลด products.csv ไม่สำเร็จ (${e.message})`),
+    })
+  }, [])
+
+  useEffect(() => {
+    const onHash = () => setTab(tabFromHash())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  // หน้า Lab 2.2 ต้องการแถวที่มี revenue / hour เพิ่ม
+  const labRows = useMemo(() => (rows ? prepareRows(rows) : []), [rows])
+  // ช่วงวันที่ที่มีข้อมูลขาย (วันที่เป็น 'YYYY-MM-DD' เทียบแบบข้อความได้)
+  const bounds = useMemo<DateRange | null>(() => {
+    if (!rows?.length) return null
+    let from = rows[0].date
+    let to = rows[0].date
+    for (const r of rows) {
+      if (r.date < from) from = r.date
+      if (r.date > to) to = r.date
+    }
+    return { from, to }
+  }, [rows])
+  const range = picked ?? bounds
+  const allBranches = useMemo(() => (rows ? salesByBranch(rows).map((b) => b.branch) : []), [rows])
+  // dateRows = กรองแค่วันที่ (ใช้กับกราฟเทียบสาขา) · viewRows = กรองทั้งวันที่และสาขา (ใช้กับ KPI และกราฟอื่น)
+  const dateRows = useMemo(
+    () => (rows && range ? rows.filter((r) => r.date >= range.from && r.date <= range.to) : []),
+    [rows, range],
+  )
+  const viewRows = useMemo(() => (branch ? dateRows.filter((r) => r.branch === branch) : dateRows), [dateRows, branch])
+  const summary = useMemo(() => kpis(viewRows), [viewRows])
+  const daily = useMemo(() => withMovingAverage(dailySales(viewRows), 7), [viewRows])
+  const branches = useMemo(() => salesByBranch(dateRows), [dateRows])
+  const payments = useMemo(() => salesByPaymentMethod(viewRows), [viewRows])
   // Recharts อ่านสีของแต่ละชิ้นจากฟิลด์ fill ในข้อมูล
   const paymentSlices = useMemo(
     () => payments.map((p, i) => ({ ...p, fill: PAYMENT_COLORS[i % PAYMENT_COLORS.length] })),
@@ -188,11 +136,11 @@ function App() {
   if (error) {
     return <div className="flex min-h-screen items-center justify-center text-red-700">{error}</div>
   }
-  if (!rows || !summary) {
+  if (!rows || !range || !bounds) {
     return <div className="flex min-h-screen items-center justify-center text-stone-500">กำลังโหลดข้อมูล…</div>
   }
 
-  const range = daily.length ? `${formatThaiDate(daily[0].date)} – ${formatThaiDate(daily[daily.length - 1].date)}` : ''
+  const dataRange = `${formatThaiDate(bounds.from)} – ${formatThaiDate(bounds.to)}`
   const tick = { ...AXIS_TICK, fontSize: isMobile ? 11 : 12 }
   const yAxisWidth = isMobile ? 48 : 64
   const chartMargin = isMobile ? { top: 4, right: 8, bottom: 0, left: 0 } : { top: 8, right: 16, bottom: 0, left: 8 }
@@ -206,15 +154,54 @@ function App() {
             <div className="rounded-lg bg-gradient-to-r from-[#e0428f] to-[#7c4dff] px-3 py-1.5">
               <Logo />
             </div>
-            <p className="text-right text-xs text-stone-400 sm:text-sm">{range}</p>
+            <p className="text-right text-xs text-stone-400 sm:text-sm">{dataRange}</p>
           </div>
+          <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 sm:px-8">
+            {TABS.map((t) => (
+              <a
+                key={t.id}
+                href={`#${t.id}`}
+                aria-current={tab === t.id ? 'page' : undefined}
+                className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
+                  tab === t.id ? 'border-[#e0428f] text-[#c02d74]' : 'border-transparent text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                {t.label}
+              </a>
+            ))}
+          </nav>
         </header>
 
+        {tab === 'customers' ? (
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
+            <CustomersPage rows={rows} />
+          </main>
+        ) : tab === 'lab2' ? (
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
+            <Lab2Page rows={labRows} products={products} />
+          </main>
+        ) : (
         <main className="mx-auto max-w-7xl space-y-4 px-4 py-6 sm:space-y-6 sm:px-8 sm:py-8">
           <div>
             <h1 className="text-xl font-semibold text-stone-800 sm:text-2xl">Dashboard</h1>
-            <p className="text-xs text-stone-400 sm:text-sm">ภาพรวมยอดขายทุกสาขา</p>
+            <p className="text-xs text-stone-400 sm:text-sm">
+              {branch ? `ยอดขายสาขา${branch}` : 'ภาพรวมยอดขายทุกสาขา'} · {formatThaiDate(range.from)} – {formatThaiDate(range.to)}
+            </p>
           </div>
+
+          <FilterBar
+            range={range}
+            bounds={bounds}
+            onRangeChange={setPicked}
+            branches={allBranches}
+            branch={branch}
+            onBranchChange={setBranch}
+          />
+
+          {viewRows.length === 0 ? (
+            <p className="rounded-2xl bg-white py-16 text-center text-sm text-stone-500">ไม่มียอดขายในช่วงวันที่และสาขาที่เลือก</p>
+          ) : (
+          <>
 
           {/* KPI */}
           <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
@@ -353,7 +340,7 @@ function App() {
           </div>
 
           {/* ยอดขายแยกสาขา: กราฟ + ตาราง */}
-          <Card title="ยอดขายแยกสาขา" subtitle="เรียงจากมากไปน้อย">
+          <Card title="ยอดขายแยกสาขา" subtitle={branch ? `เทียบทุกสาขาในช่วงที่เลือก · ไฮไลต์${branch}` : 'เรียงจากมากไปน้อย'}>
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
               <div className="h-64 sm:h-72 lg:col-span-3">
                 <ResponsiveContainer width="100%" height="100%">
@@ -370,7 +357,11 @@ function App() {
                       <XAxis type="number" tickFormatter={formatBahtCompact} tick={tick} tickLine={false} axisLine={false} />
                       <YAxis type="category" dataKey="branch" tick={tick} tickLine={false} axisLine={false} width={76} />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [formatBaht(Number(v)), 'ยอดขาย']} cursor={{ fill: '#faf5ff' }} />
-                      <Bar dataKey="sales" fill="url(#barFillH)" radius={[0, 4, 4, 0]} maxBarSize={28} isAnimationActive={false} />
+                      <Bar dataKey="sales" fill="url(#barFillH)" radius={[0, 4, 4, 0]} maxBarSize={28} isAnimationActive={false}>
+                        {branches.map((b) => (
+                          <Cell key={b.branch} fill={branch && b.branch !== branch ? MUTED : 'url(#barFillH)'} />
+                        ))}
+                      </Bar>
                     </BarChart>
                   ) : (
                     <BarChart data={branches} margin={chartMargin}>
@@ -384,7 +375,11 @@ function App() {
                       <XAxis dataKey="branch" tick={tick} tickLine={false} axisLine={false} />
                       <YAxis tickFormatter={formatBahtCompact} tick={tick} tickLine={false} axisLine={false} width={yAxisWidth} />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [formatBaht(Number(v)), 'ยอดขาย']} cursor={{ fill: '#faf5ff' }} />
-                      <Bar dataKey="sales" fill="url(#barFillV)" radius={[4, 4, 0, 0]} maxBarSize={56} isAnimationActive={false} />
+                      <Bar dataKey="sales" fill="url(#barFillV)" radius={[4, 4, 0, 0]} maxBarSize={56} isAnimationActive={false}>
+                        {branches.map((b) => (
+                          <Cell key={b.branch} fill={branch && b.branch !== branch ? MUTED : 'url(#barFillV)'} />
+                        ))}
+                      </Bar>
                     </BarChart>
                   )}
                 </ResponsiveContainer>
@@ -402,7 +397,7 @@ function App() {
                   </thead>
                   <tbody>
                     {branches.map((b, i) => (
-                      <tr key={b.branch} className="border-b border-stone-100 last:border-0">
+                      <tr key={b.branch} className={`border-b border-stone-100 last:border-0 ${b.branch === branch ? 'bg-pink-50/60 font-medium' : ''}`}>
                         <td className="px-3 py-3 text-stone-400">{i + 1}</td>
                         <td className="px-3 py-3">{b.branch}</td>
                         <td className="px-3 py-3 text-right tabular-nums">{formatBaht(b.sales)}</td>
@@ -418,7 +413,10 @@ function App() {
               </div>
             </div>
           </Card>
+          </>
+          )}
         </main>
+        )}
       </div>
     </div>
   )

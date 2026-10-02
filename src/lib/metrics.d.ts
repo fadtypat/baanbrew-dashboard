@@ -20,7 +20,17 @@ export interface Kpis {
   uniqueMembers: number
 }
 
+export interface PreparedRow extends SaleRow {
+  revenue: number
+  hour: number
+}
+
 export function parseSales(csvText: string): SaleRow[]
+export function prepareRows(rows: SaleRow[]): PreparedRow[]
+export function dailyRevenue(rows: PreparedRow[]): { date: string; revenue: number }[]
+export function fmtBaht(n: number): string
+export function fmtNum(n: number): string
+export function fmtShortBaht(n: number): string
 export function lineTotal(row: SaleRow): number
 export function totalSales(rows: SaleRow[]): number
 export function orderCount(rows: SaleRow[]): number

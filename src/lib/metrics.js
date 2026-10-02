@@ -28,6 +28,15 @@ export function parseSales(csvText) {
   }))
 }
 
+/**
+ * เตรียมแถวสำหรับหน้า Lab 2.2 (src/lab2): รับแถวจาก parseSales() แล้วเพิ่ม
+ * - revenue = qty × unit_price
+ * - hour    = ชั่วโมงตามเวลาไทย ตัดจาก datetime ตรง ๆ
+ */
+export function prepareRows(rows) {
+  return rows.map((r) => ({ ...r, revenue: lineTotal(r), hour: Number(r.datetime.slice(11, 13)) }))
+}
+
 /** ยอดขายของ 1 แถว = qty × unit_price */
 export function lineTotal(row) {
   return row.qty * row.unit_price
@@ -156,7 +165,22 @@ export function formatBahtCompact(n) {
   return `฿${compactFmt.format(n)}`
 }
 
-const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+/* ---------- สำหรับ src/lab2 (ใช้ชื่อเดียวกับ lab2-starter) ---------- */
+
+/** ยอดขายรายวันจากแถวที่ผ่าน prepareRows() → [{ date, revenue }] */
+export function dailyRevenue(rows) {
+  return dailySales(rows).map(({ date, sales }) => ({ date, revenue: sales }))
+}
+
+/** จำนวนเงินไม่มีทศนิยม เช่น ฿12,346 */
+export const fmtBaht = (n) => `฿${numberFmt.format(n)}`
+/** ตัวเลขมีจุลภาค */
+export const fmtNum = formatNumber
+/** จำนวนเงินแบบย่อบนแกนกราฟ เช่น ฿1.2 ล., ฿85k */
+export const fmtShortBaht = (n) =>
+  n >= 1_000_000 ? `฿${(n / 1_000_000).toFixed(1)} ล.` : n >= 1000 ? `฿${(n / 1000).toFixed(0)}k` : `฿${n}`
+
+const THAI_MONTHS =['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
 
 /**
  * 'YYYY-MM-DD' → วันที่ไทยแบบ พ.ศ. (ปี ค.ศ. + 543)

@@ -166,6 +166,25 @@ export function salesByPaymentMethod(rows) {
     .sort((a, b) => b.sales - a.sales)
 }
 
+/**
+ * ยอดขายแยกตามเมนู → [{ product_id, sales, qty, share }] เรียงยอดขายจากมากไปน้อย
+ * - qty   = จำนวนชิ้น/แก้วที่ขายได้ (ผลรวม qty)
+ * - share = ยอดขายเมนู ÷ ยอดขายรวม (0–1)
+ */
+export function salesByProduct(rows) {
+  const total = totalSales(rows)
+  const map = new Map()
+  for (const r of rows) {
+    const p = map.get(r.product_id) ?? { product_id: r.product_id, sales: 0, qty: 0 }
+    p.sales += lineTotal(r)
+    p.qty += r.qty
+    map.set(r.product_id, p)
+  }
+  return [...map.values()]
+    .map((p) => ({ ...p, share: total === 0 ? 0 : p.sales / total }))
+    .sort((a, b) => b.sales - a.sales)
+}
+
 /** สรุป KPI ทั้ง 4 ตัวในครั้งเดียว */
 export function kpis(rows) {
   return {

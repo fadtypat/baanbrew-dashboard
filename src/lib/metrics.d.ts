@@ -52,6 +52,7 @@ export function withMovingAverage(
 ): { date: string; sales: number; avg: number | null }[]
 export function salesByBranch(rows: SaleRow[]): { branch: string; sales: number; share: number }[]
 export function salesByPaymentMethod(rows: SaleRow[]): { method: string; sales: number; share: number }[]
+export function salesByProduct(rows: SaleRow[]): { product_id: string; sales: number; qty: number; share: number }[]
 export function kpis(rows: SaleRow[]): Kpis
 export function formatNumber(n: number): string
 export function formatBaht(n: number): string

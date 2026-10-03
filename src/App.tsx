@@ -32,6 +32,7 @@ import {
   type SaleRow,
 } from './lib/metrics.js'
 import Lab2Page from './lab2/Lab2Page.jsx'
+import MenuSalesCard from './overview/MenuSalesCard.tsx'
 import CustomersPage from './customers/CustomersPage.tsx'
 import { Card, GradientTile, LegendDot } from './components/ui.tsx'
 import FilterBar from './components/FilterBar.tsx'
@@ -87,7 +88,7 @@ function App() {
       .catch((e: Error) => setError(e.message))
   }, [])
 
-  // products.csv ใช้แสดงชื่อเมนูในหน้า Lab 2.2 เท่านั้น
+  // products.csv ใช้แสดงชื่อเมนู/หมวดในการ์ดยอดขายแยกตามเมนู และหน้า Lab 2.2
   useEffect(() => {
     Papa.parse<Product>('/products.csv', {
       download: true,
@@ -423,6 +424,8 @@ function App() {
               </p>
             )}
           </Card>
+
+          <MenuSalesCard rows={viewRows} products={products} />
 
           {/* ยอดขายแยกสาขา: กราฟ + ตาราง */}
           <Card title="ยอดขายแยกสาขา" subtitle={branch ? `เทียบทุกสาขาในช่วงที่เลือก · ไฮไลต์${branch}` : 'เรียงจากมากไปน้อย'}>

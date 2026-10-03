@@ -227,6 +227,21 @@ export function dailyRevenue(rows) {
   return dailySales(rows).map(({ date, sales }) => ({ date, revenue: sales }))
 }
 
+/** KPI 4 ตัวในชื่อแบบ lab3-starter → { revenue, bills, avgPerBill, customers } */
+export function computeKpis(rows) {
+  const k = kpis(rows)
+  return { revenue: k.totalSales, bills: k.orderCount, avgPerBill: k.averageOrderValue, customers: k.uniqueMembers }
+}
+
+/** ยอดขายแยกสาขา เรียงมากไปน้อย → [{ branch, revenue, bills }] */
+export function revenueByBranch(rows) {
+  return salesByBranch(rows).map(({ branch, sales }) => ({
+    branch,
+    revenue: sales,
+    bills: orderCount(rows.filter((r) => r.branch === branch)),
+  }))
+}
+
 /** จำนวนเงินไม่มีทศนิยม เช่น ฿12,346 */
 export const fmtBaht = (n) => `฿${numberFmt.format(n)}`
 /** ตัวเลขมีจุลภาค */

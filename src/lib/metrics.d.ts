@@ -28,6 +28,8 @@ export interface PreparedRow extends SaleRow {
 export function parseSales(csvText: string): SaleRow[]
 export function prepareRows(rows: SaleRow[]): PreparedRow[]
 export function dailyRevenue(rows: PreparedRow[]): { date: string; revenue: number }[]
+export function computeKpis(rows: SaleRow[]): { revenue: number; bills: number; avgPerBill: number; customers: number }
+export function revenueByBranch(rows: SaleRow[]): { branch: string; revenue: number; bills: number }[]
 export function fmtBaht(n: number): string
 export function fmtNum(n: number): string
 export function fmtShortBaht(n: number): string

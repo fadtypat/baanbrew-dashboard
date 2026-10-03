@@ -1,12 +1,119 @@
 rules_version = '2';
 
-// Lab 3.3 · เขียน Security Rules ด้วย Prompt 3.3B ใน PROMPTS_LAB3.md
-// ตอนนี้ปิดทุกอย่างไว้ (ปลอดภัย แต่เว็บใช้งานไม่ได้)
-// เป้าหมาย: แท็บ "ทดสอบ Rules" ได้ ✅ ทุกข้อ และฟอร์มบันทึกยอดขายยังใช้งานได้
+// Lab 3.3 · Security Rules ของบ้านบรู (Prompt 3.3B)
+// หลักคิด: web config อยู่ในหน้าเว็บให้ทุกคนเห็น ใครก็ส่ง request ตรงมาที่ Firestore ได้
+// ความปลอดภัยจึงต้องอยู่ที่นี่ ไม่ใช่ในฟอร์มหน้าเว็บ
+// ยอดขายที่สร้างจากเว็บต้องหน้าตาเหมือนที่ buildSale() ใน src/lab3/saleModel.js สร้าง + created_at
+// ส่วน products, branches และยอดขายที่ import ใช้ scripts/seed.mjs (Admin SDK) ซึ่งไม่ผ่าน rules
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+
+    // ล็อกอินแล้วหรือยัง (request.auth เป็น null ถ้ายังไม่ล็อกอิน)
+    function signedIn() {
+      return request.auth != null;
     }
+
+    // เมนูและสาขา: ล็อกอินแล้วอ่านได้ แต่แก้จากหน้าเว็บไม่ได้เลย
+    // (กันคนแก้ราคาเมนูเป็น ฿1 แล้วใช้ราคานั้นบันทึกยอดขาย)
+    match /products/{productId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /branches/{branchId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /sales/{saleId} {
+      // อ่านยอดขายได้เมื่อล็อกอิน
+      allow read: if signedIn();
+
+      // สร้างยอดขายใหม่ได้เมื่อล็อกอิน และข้อมูลต้องผ่าน validSale() ทุกข้อ
+      allow create: if signedIn() && validSale(saleId, request.resource.data);
+
+      // ยอดขายที่บันทึกแล้วแก้ไขหรือลบไม่ได้ (ถ้าผิดให้บันทึกรายการปรับยอดใหม่ ไม่ใช่แก้ของเดิม)
+      allow update, delete: if false;
+
+      function validSale(id, d) {
+        return hasExactFields(d)
+          && validOwner(d)
+          && validBranchAndPayment(d)
+          && validNumbers(d)
+          && validPrice(d)
+          && validDateTime(d)
+          && validCustomer(d)
+          && validIds(id, d);
+      }
+
+      // ฟิลด์ต้องครบทุกตัว (hasAll) และห้ามมีฟิลด์อื่นเกินมา (hasOnly)
+      // กันการแอบเพิ่มฟิลด์ เช่น discount ที่ Dashboard ไม่ได้คิด หรือ is_admin
+      function hasExactFields(d) {
+        let fields = ['order_id', 'datetime', 'date', 'hour', 'branch', 'product_id',
+                      'qty', 'unit_price', 'revenue', 'customer_id', 'payment_method',
+                      'channel', 'source', 'created_by', 'created_at'];
+        return d.keys().hasAll(fields) && d.keys().hasOnly(fields);
+      }
+
+      // source ต้องเป็น "web" (แยกจากข้อมูลที่ import ซึ่งเป็น "import")
+      // created_by ต้องเป็น uid ของคนที่ล็อกอินอยู่ จะปลอมเป็นคนอื่นไม่ได้
+      // created_at ต้องเป็นเวลาของเซิร์ฟเวอร์ (serverTimestamp()) ห้ามใส่เวลาเอง
+      function validOwner(d) {
+        return d.source == 'web'
+          && d.created_by == request.auth.uid
+          && d.created_at == request.time;
+      }
+
+      // สาขาต้องเป็น 1 ใน 5 สาขาจริง และวิธีชำระเงินต้องเป็น 1 ใน 5 แบบที่ร้านรับ
+      // channel ต้องตรงกับวิธีชำระ: LINE MAN / Grab = เดลิเวอรี นอกนั้น = หน้าร้าน (เหมือน buildSale)
+      function validBranchAndPayment(d) {
+        return d.branch in ['สยาม', 'สีลม', 'อารีย์', 'บางนา', 'มหาวิทยาลัย']
+          && d.payment_method in ['QR พร้อมเพย์', 'บัตรเครดิต', 'เงินสด', 'LINE MAN', 'Grab']
+          && d.channel == (d.payment_method in ['LINE MAN', 'Grab'] ? 'เดลิเวอรี' : 'หน้าร้าน');
+      }
+
+      // qty ต้องเป็นจำนวนเต็ม 1–20 (กันจำนวนติดลบ ทศนิยม หรือสั่งทีละพันแก้ว)
+      // hour ต้องเป็นจำนวนเต็ม 0–23
+      function validNumbers(d) {
+        return d.qty is int && d.qty >= 1 && d.qty <= 20
+          && d.hour is int && d.hour >= 0 && d.hour <= 23;
+      }
+
+      // ราคาต่อหน่วยต้องเท่ากับราคาเมนูใน products/{product_id} ที่เก็บในฐานข้อมูล (อ่านด้วย get())
+      // ไม่เชื่อราคาที่หน้าเว็บส่งมา และเมนูต้องมีอยู่จริง (exists() ก่อน get())
+      // revenue ต้องเท่ากับ qty × unit_price พอดี (กันยอดรวมปลอม)
+      function validPrice(d) {
+        let productPath = /databases/$(database)/documents/products/$(d.product_id);
+        return d.product_id is string
+          && exists(productPath)
+          && d.unit_price == get(productPath).data.price
+          && d.revenue == d.qty * d.unit_price;
+      }
+
+      // date ต้องเป็น YYYY-MM-DD และ datetime เป็น YYYY-MM-DDTHH:MM:SS+07:00 (เวลาไทยเท่านั้น)
+      // วันที่ใน datetime ต้องตรงกับ date ไม่งั้นกราฟรายวันกับรายการล่าสุดจะไม่ตรงกัน
+      function validDateTime(d) {
+        return d.date is string
+          && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && d.datetime is string
+          && d.datetime.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+]07:00$')
+          && d.datetime.split('T')[0] == d.date;
+      }
+
+      // รหัสสมาชิกไม่บังคับ: เป็น null (ลูกค้าทั่วไป) หรือ C ตามด้วยตัวเลข 5 หลัก เช่น C01234
+      function validCustomer(d) {
+        return d.customer_id == null
+          || (d.customer_id is string && d.customer_id.matches('^C[0-9]{5}$'));
+      }
+
+      // document id ต้องเป็น order_id-product_id แบบเดียวกับข้อมูลที่ import
+      // (1 บิลมีหลายเมนูได้ แต่ 1 เมนูในบิลเดียวกันมีได้เอกสารเดียว)
+      function validIds(id, d) {
+        return d.order_id is string
+          && d.order_id.size() > 0
+          && id == d.order_id + '-' + d.product_id;
+      }
+    }
+
+    // collection อื่นนอกจากนี้ไม่ได้ match ไว้ จึงถูกปฏิเสธทั้งหมดโดยอัตโนมัติ
   }
 }

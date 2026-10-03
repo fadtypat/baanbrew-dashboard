@@ -33,6 +33,7 @@ import {
 } from './lib/metrics.js'
 import Lab2Page from './lab2/Lab2Page.jsx'
 import LiveTab from './lab3/LiveTab.jsx'
+import RulesTester from './lab3/RulesTester.jsx'
 import MenuSalesCard from './overview/MenuSalesCard.tsx'
 import CustomersPage from './customers/CustomersPage.tsx'
 import { Card, GradientTile, LegendDot } from './components/ui.tsx'
@@ -48,6 +49,7 @@ const TABS = [
   { id: 'customers', label: 'ข้อมูลลูกค้า' },
   { id: 'lab2', label: 'Lab 2.2 · ซ่อมกราฟ' },
   { id: 'live', label: 'ยอดขายสด' },
+  { id: 'rules', label: 'ทดสอบ Rules' },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 const tabFromHash = (): TabId => TABS.find((t) => `#${t.id}` === window.location.hash)?.id ?? 'overview'
@@ -182,6 +184,10 @@ function App() {
         {tab === 'customers' ? (
           <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
             <CustomersPage rows={rows} />
+          </main>
+        ) : tab === 'rules' ? (
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
+            <RulesTester />
           </main>
         ) : tab === 'live' ? (
           <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">

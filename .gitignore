@@ -32,3 +32,4 @@ secrets/
 import-summary.json
 .firebase/
 *-firebase-adminsdk-*.json
+!.env.production

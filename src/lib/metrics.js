@@ -81,6 +81,42 @@ export function dailySales(rows) {
 }
 
 /**
+ * ยอดขายรายเดือน → [{ month, sales, orders, days, perDay, partial }] เรียงจากเก่าไปใหม่
+ * - month   = 'YYYY-MM' (ตัดจาก date ตามเวลาไทย)
+ * - orders  = จำนวนบิลไม่ซ้ำในเดือนนั้น
+ * - days    = จำนวนวันปฏิทินของเดือนที่อยู่ในช่วง period (ใช้หาค่าเฉลี่ยต่อวัน)
+ * - perDay  = sales ÷ days ใช้เทียบเดือนที่ไม่ครบเดือนกับเดือนอื่นได้ยุติธรรมกว่า
+ * - partial = true เมื่อ period ไม่ครอบคลุมทั้งเดือน (เช่น ข้อมูลถึงแค่ 20 ก.ย.)
+ * period = { from, to } ช่วงวันที่ที่ข้อมูลครอบคลุมจริง ('YYYY-MM-DD')
+ */
+export function monthlySales(rows, period) {
+  const map = new Map()
+  for (const r of rows) {
+    const month = r.date.slice(0, 7)
+    const m = map.get(month) ?? { sales: 0, orders: new Set() }
+    m.sales += lineTotal(r)
+    m.orders.add(r.order_id)
+    map.set(month, m)
+  }
+  return [...map]
+    .map(([month, m]) => {
+      const first = `${month}-01`
+      const last = dateFromDayNumber(dayNumber(nextMonthFirstDay(month)) - 1)
+      const from = period.from > first ? period.from : first
+      const to = period.to < last ? period.to : last
+      const days = Math.max(1, dayNumber(to) - dayNumber(from) + 1)
+      return { month, sales: m.sales, orders: m.orders.size, days, perDay: m.sales / days, partial: from !== first || to !== last }
+    })
+    .sort((a, b) => a.month.localeCompare(b.month))
+}
+
+/** 'YYYY-MM' → 'YYYY-MM-DD' ของวันที่ 1 เดือนถัดไป */
+function nextMonthFirstDay(month) {
+  const [y, m] = month.split('-').map(Number)
+  return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
+}
+
+/**
  * ค่าเฉลี่ยเคลื่อนที่ย้อนหลัง N วัน (ค่าเริ่มต้น 7) ของยอดขายรายวัน → [{ date, sales, avg }]
  * - avg ของวัน d = ผลรวมยอดขาย d-(N-1) ถึง d ÷ N
  * - นับตามวันปฏิทิน: วันที่ไม่มีข้อมูลในช่วงถือเป็นยอด 0

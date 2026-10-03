@@ -37,6 +37,15 @@ export function orderCount(rows: SaleRow[]): number
 export function averageOrderValue(rows: SaleRow[]): number
 export function uniqueMemberCount(rows: SaleRow[]): number
 export function dailySales(rows: SaleRow[]): { date: string; sales: number }[]
+export interface MonthlySales {
+  month: string
+  sales: number
+  orders: number
+  days: number
+  perDay: number
+  partial: boolean
+}
+export function monthlySales(rows: SaleRow[], period: { from: string; to: string }): MonthlySales[]
 export function withMovingAverage(
   daily: { date: string; sales: number }[],
   windowDays?: number,

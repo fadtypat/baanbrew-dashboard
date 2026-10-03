@@ -23,6 +23,7 @@ import {
   formatPercent,
   formatThaiDate,
   kpis,
+  monthlySales,
   parseSales,
   prepareRows,
   salesByBranch,
@@ -50,6 +51,7 @@ const tabFromHash = (): TabId => TABS.find((t) => `#${t.id}` === window.location
 
 const PAYMENT_COLORS = [PINK, PURPLE, BLUE, AMBER, TEAL] // ลำดับคงที่ ตามอันดับยอดขาย (5 วิธีชำระ)
 const DAILY_COLOR = MUTED // เส้นรายวันแบบจาง
+const PARTIAL_MONTH_COLOR = '#e6cfe6' // แท่งเดือนที่ข้อมูลไม่ครบเดือน
 
 /* ---------- โครงหน้า ---------- */
 
@@ -72,6 +74,7 @@ function App() {
   // ตัวกรองหน้าภาพรวม: ช่วงวันที่ (null = ทั้งหมด) และสาขา ('' = ทุกสาขา)
   const [picked, setPicked] = useState<DateRange | null>(null)
   const [branch, setBranch] = useState('')
+  const [monthMetric, setMonthMetric] = useState<'sales' | 'perDay'>('sales') // กราฟรายเดือน: ยอดรวม / เฉลี่ยต่อวัน
   const isMobile = useIsMobile()
 
   useEffect(() => {
@@ -127,6 +130,7 @@ function App() {
   const daily = useMemo(() => withMovingAverage(dailySales(viewRows), 7), [viewRows])
   const branches = useMemo(() => salesByBranch(dateRows), [dateRows])
   const payments = useMemo(() => salesByPaymentMethod(viewRows), [viewRows])
+  const monthly = useMemo(() => (range ? monthlySales(viewRows, range) : []), [viewRows, range])
   // Recharts อ่านสีของแต่ละชิ้นจากฟิลด์ fill ในข้อมูล
   const paymentSlices = useMemo(
     () => payments.map((p, i) => ({ ...p, fill: PAYMENT_COLORS[i % PAYMENT_COLORS.length] })),
@@ -338,6 +342,87 @@ function App() {
               </ul>
             </Card>
           </div>
+
+          {/* ยอดขายรายเดือน */}
+          <Card
+            title="ยอดขายรายเดือน"
+            subtitle={monthMetric === 'sales' ? 'ยอดขายรวมของแต่ละเดือน' : 'ยอดขายเฉลี่ยต่อวัน ใช้เทียบเดือนที่ไม่ครบเดือนได้'}
+            action={
+              <div className="flex items-center gap-3">
+                {monthly.some((m) => m.partial) && <LegendDot color={PARTIAL_MONTH_COLOR} label="ไม่ครบเดือน" />}
+                <div className="flex rounded-full bg-stone-100 p-0.5 text-xs font-medium">
+                  {(
+                    [
+                      ['sales', 'ยอดรวม'],
+                      ['perDay', 'เฉลี่ยต่อวัน'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setMonthMetric(key)}
+                      aria-pressed={monthMetric === key}
+                      className={`rounded-full px-3 py-1 ${monthMetric === key ? 'bg-white text-[#c02d74] shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            }
+          >
+            <div className="h-64 sm:h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthly} margin={chartMargin}>
+                  <defs>
+                    <linearGradient id="monthFill" x1="0" y1="1" x2="0" y2="0">
+                      <stop offset="0%" stopColor={PURPLE} />
+                      <stop offset="100%" stopColor={PINK} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickFormatter={(m: string) => formatThaiDate(`${m}-01`, { year: 'short' }).replace(/^1 /, '')}
+                    tick={tick}
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={isMobile ? 12 : 4}
+                  />
+                  <YAxis tickFormatter={formatBahtCompact} tick={tick} tickLine={false} axisLine={false} width={yAxisWidth} />
+                  <Tooltip
+                    {...TOOLTIP_STYLE}
+                    cursor={{ fill: '#faf5ff' }}
+                    content={({ active, payload }) => {
+                      const m = active && payload?.[0]?.payload
+                      if (!m) return null
+                      return (
+                        <div className="rounded-[10px] bg-white px-3 py-2 text-[13px] shadow-[0_8px_24px_rgba(60,30,90,0.15)]">
+                          <p className="font-medium text-stone-800">
+                            {formatThaiDate(`${m.month}-01`).replace(/^1 /, '')}
+                            {m.partial && <span className="text-stone-400"> · ไม่ครบเดือน ({m.days} วัน)</span>}
+                          </p>
+                          <p className="mt-1 tabular-nums text-stone-600">ยอดขาย {formatBaht(m.sales)}</p>
+                          <p className="tabular-nums text-stone-600">เฉลี่ยต่อวัน {formatBaht(Math.round(m.perDay))}</p>
+                          <p className="tabular-nums text-stone-600">จำนวนบิล {formatNumber(m.orders)}</p>
+                        </div>
+                      )
+                    }}
+                  />
+                  <Bar dataKey={monthMetric} radius={[4, 4, 0, 0]} maxBarSize={44} isAnimationActive={false}>
+                    {monthly.map((m) => (
+                      <Cell key={m.month} fill={m.partial ? PARTIAL_MONTH_COLOR : 'url(#monthFill)'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {monthMetric === 'sales' && monthly.some((m) => m.partial) && (
+              <p className="mt-3 text-xs text-stone-500">
+                แท่งสีจาง = เดือนที่มีข้อมูลไม่ครบทั้งเดือน ยอดรวมจึงต่ำกว่าปกติ · กด “เฉลี่ยต่อวัน” เพื่อเทียบกับเดือนอื่นได้ตรงกว่า
+              </p>
+            )}
+          </Card>
 
           {/* ยอดขายแยกสาขา: กราฟ + ตาราง */}
           <Card title="ยอดขายแยกสาขา" subtitle={branch ? `เทียบทุกสาขาในช่วงที่เลือก · ไฮไลต์${branch}` : 'เรียงจากมากไปน้อย'}>

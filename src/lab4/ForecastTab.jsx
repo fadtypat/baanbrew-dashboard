@@ -8,7 +8,8 @@ import { AnalyticsShell, Card, Pending, Insight, MAIN, PURPLE, RAMP, MUTED, INK,
 import { AXIS_TICK, GRID_COLOR, TOOLTIP_STYLE } from "../components/theme.ts";
 import { useAnalytics } from "./useAnalytics.js";
 import { toSeries } from "../lib/analytics/daily.js";
-import { seasonalForecast, backtest } from "../lib/analytics/forecast.js";
+import { seasonalForecast, backtest, weeklyView, weeklyBacktest } from "../lib/analytics/forecast.js";
+import { addDays } from "../lab3/time.js";
 import { scoreAnomalies } from "../lib/analytics/anomaly.js";
 import { fmtBaht, fmtShortBaht } from "../lib/metrics.js";
 
@@ -16,9 +17,24 @@ const BRANCHES = ["สยาม", "สีลม", "อารีย์", "บา�
 const HORIZON = 28;
 const shortDay = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 const tryRun = (f) => { try { return { value: f() }; } catch (e) { return { error: e.message }; } };
+const weekRange = (monday) => `${shortDay(monday)} – ${shortDay(addDays(monday, 6))}`;
+const fmtPct = (v) => (v == null ? "–" : `${v.toFixed(1)}%`);
+
+/** กลุ่มปุ่มแบบ pill เหมือนปุ่มเลือกในหน้าอื่น */
+function Pills({ options, value, onChange }) {
+  return (
+    <div className="flex flex-wrap rounded-full bg-stone-100 p-0.5 text-xs font-medium">
+      {options.map(([key, label]) => (
+        <button key={String(key)} type="button" onClick={() => onChange(key)} aria-pressed={value === key}
+                className={`rounded-full px-3 py-1 ${value === key ? "bg-white text-[#c02d74] shadow-sm" : "text-stone-500 hover:text-stone-800"}`}>{label}</button>
+      ))}
+    </div>
+  );
+}
 
 function ForecastCard({ daily }) {
   const [branch, setBranch] = useState(null);
+  const [view, setView] = useState("daily"); // daily | weekly
   const result = useMemo(() => tryRun(() => {
     const series = toSeries(daily, branch);
     const bt = backtest(series, HORIZON);
@@ -31,19 +47,34 @@ function ForecastCard({ daily }) {
     ];
     chart[recent.length - 1] = { ...chart[recent.length - 1], forecast: last.revenue }; // ต่อเส้นให้ไม่ขาด
     const next7 = fc.slice(0, 7).reduce((s, f) => s + f.forecast, 0);
-    return { bt, chart, next7, lastDate: last.date };
+
+    // รายสัปดาห์ (จันทร์–อาทิตย์): ใช้ยอดจริง 9 สัปดาห์ล่าสุด + คาดการณ์ 28 วัน เฉพาะสัปดาห์ที่ข้อมูลครบ 7 วัน
+    const wkRows = weeklyView(series.slice(-63), fc);
+    const lastActual = wkRows.map((w) => w.actual !== undefined).lastIndexOf(true);
+    if (lastActual >= 0 && wkRows[lastActual].forecast === undefined) {
+      wkRows[lastActual] = { ...wkRows[lastActual], forecast: wkRows[lastActual].actual }; // ต่อเส้นให้ไม่ขาด
+    }
+    const nextWeek = wkRows.find((w) => w.actual === undefined && w.forecast !== undefined);
+    const wkBt = weeklyBacktest(bt.test);
+    return {
+      bt, chart, next7, lastDate: last.date,
+      weekly: { rows: wkRows, lastWeek: lastActual >= 0 ? wkRows[lastActual].week : null, nextWeek, bt: wkBt },
+    };
   }), [daily, branch]);
 
   const r = result.value;
+  const weekly = view === "weekly";
   return (
-    <Card title="พยากรณ์ยอดขาย 28 วัน" sub="ค่าเฉลี่ยวันเดียวกันของสัปดาห์ 8 สัปดาห์ล่าสุด · แถบ = ช่วงที่คาดว่าครอบคลุมราว 80% ของวัน"
-          right={<div className="flex flex-wrap rounded-full bg-stone-100 p-0.5 text-xs font-medium">
-            {[null, ...BRANCHES].map((b) => (
-              <button key={b ?? "all"} onClick={() => setBranch(b)}
-                      className={`rounded-full px-3 py-1 ${branch === b ? "bg-white text-[#c02d74] shadow-sm" : "text-stone-500 hover:text-stone-800"}`}>{b ?? "รวม"}</button>
-            ))}
+    <Card title="พยากรณ์ยอดขาย 28 วัน"
+          sub={weekly ? "รวมเป็นรายสัปดาห์ จันทร์–อาทิตย์ · แสดงเฉพาะสัปดาห์ที่มีข้อมูลครบ 7 วัน"
+                      : "ค่าเฉลี่ยวันเดียวกันของสัปดาห์ 8 สัปดาห์ล่าสุด · แถบ = ช่วงที่คาดว่าครอบคลุมราว 80% ของวัน"}
+          right={<div className="flex flex-wrap items-center gap-2">
+            <Pills options={[["daily", "รายวัน"], ["weekly", "รายสัปดาห์"]]} value={view} onChange={setView} />
+            <Pills options={[[null, "รวม"], ...BRANCHES.map((b) => [b, b])]} value={branch} onChange={setBranch} />
           </div>}>
-      {result.error ? <Pending lab="Lab 4.4" error={result.error} /> : (
+      {result.error ? <Pending lab="Lab 4.4" error={result.error} /> : weekly ? (
+        <WeeklyBody r={r} branch={branch} />
+      ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
             <Stat label="คาดการณ์ 7 วันข้างหน้า" value={fmtBaht(r.next7)} />
@@ -74,6 +105,45 @@ function ForecastCard({ daily }) {
         </>
       )}
     </Card>
+  );
+}
+
+/** มุมมองรายสัปดาห์: ยอดจริงและยอดคาดการณ์รวมเป็นสัปดาห์ + MAPE รายสัปดาห์เทียบรายวัน */
+function WeeklyBody({ r, branch }) {
+  const { rows, lastWeek, nextWeek, bt: wk } = r.weekly;
+  const daily = r.bt;
+  const who = branch ?? "ภาพรวม";
+  const better = wk.mapeSeasonal != null && wk.mapeSeasonal < daily.mapeSeasonal;
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Stat label={nextWeek ? `คาดการณ์สัปดาห์หน้า (${weekRange(nextWeek.week)})` : "คาดการณ์สัปดาห์หน้า"}
+              value={nextWeek ? fmtBaht(nextWeek.forecast) : "–"} />
+        <Stat label="MAPE รายสัปดาห์ · วิธีดูวันในสัปดาห์" value={fmtPct(wk.mapeSeasonal)} note={`รายวัน ${fmtPct(daily.mapeSeasonal)}`} />
+        <Stat label="MAPE รายสัปดาห์ · ค่าเฉลี่ยเส้นตรง" value={fmtPct(wk.mapeFlat)} note={`รายวัน ${fmtPct(daily.mapeFlat)}`} muted />
+      </div>
+      <div className="mt-4 h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={rows} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke={GRID_COLOR} />
+            <XAxis dataKey="week" tickFormatter={shortDay} minTickGap={24} tick={AXIS_TICK} />
+            <YAxis tickFormatter={fmtShortBaht} width={56} domain={[0, "auto"]} tick={AXIS_TICK} />
+            <Tooltip {...TOOLTIP_STYLE} labelFormatter={(w) => `สัปดาห์ ${weekRange(w)}`} formatter={(v, n) => [fmtBaht(v), n]} />
+            <Legend wrapperStyle={{ fontSize: 13 }} />
+            {lastWeek && <ReferenceLine x={lastWeek} stroke={MUTED} strokeDasharray="3 3" label={{ value: "ข้อมูลถึง", position: "insideTopLeft", fontSize: 11, fill: INK }} />}
+            <Line name="ยอดจริงรายสัปดาห์" dataKey="actual" stroke={PURPLE} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+            <Line name="คาดการณ์รายสัปดาห์" dataKey="forecast" stroke={MAIN} strokeWidth={2} strokeDasharray="6 4" dot={{ r: 3 }} isAnimationActive={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <Insight>
+        {wk.mapeSeasonal == null
+          ? `${who}: ช่วงย้อนทดสอบมีสัปดาห์จันทร์–อาทิตย์ครบไม่ถึง 1 สัปดาห์ จึงยังคิด MAPE รายสัปดาห์ไม่ได้`
+          : `${who}: คิดจาก ${wk.weeks.length} สัปดาห์เต็มในช่วงย้อนทดสอบ ความคลาดเคลื่อนรายสัปดาห์ ${fmtPct(wk.mapeSeasonal)} เทียบกับรายวัน ${fmtPct(daily.mapeSeasonal)} ${better
+              ? "ต่ำลงเพราะวันที่ขายเกินกับวันที่ขายขาดในสัปดาห์เดียวกันหักล้างกัน"
+              : "ไม่ได้ต่ำลง แปลว่าความคลาดเคลื่อนไม่ได้มาจากความผันผวนรายวันอย่างเดียว"} · จุดข้อมูลน้อย (ไม่เกิน 4 สัปดาห์) ใช้เป็นแนวโน้ม ไม่ใช่ข้อสรุปตายตัว`}
+      </Insight>
+    </>
   );
 }
 

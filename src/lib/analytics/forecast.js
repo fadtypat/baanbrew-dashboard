@@ -63,3 +63,58 @@ export function backtest(series, horizon = 28, K = 8) {
     test: actualRows.map((s, i) => ({ date: s.date, actual: s.revenue, seasonal: seasonal[i].forecast, flat: flat[i].forecast })),
   };
 }
+
+/** วันจันทร์ของสัปดาห์ที่วันนั้นอยู่ (สัปดาห์ = จันทร์–อาทิตย์) · หาวันในสัปดาห์แบบ UTC จึงไม่ขึ้นกับ timezone ของเครื่อง */
+export function weekStart(ymd) {
+  const day = new Date(ymd + "T00:00:00Z").getUTCDay(); // 0 = อาทิตย์
+  return addDays(ymd, -((day + 6) % 7));
+}
+
+/**
+ * รวมยอดจริง (series) และยอดคาดการณ์ (fc) เป็นรายสัปดาห์ จันทร์–อาทิตย์ → [{ week, actual?, forecast? }]
+ * - actual: มีเมื่อสัปดาห์นั้นมียอดจริงครบ 7 วัน
+ * - forecast: มีเมื่อยอดจริง + ยอดคาดการณ์ รวมกันครบ 7 วัน (สัปดาห์ที่คาบเกี่ยวรอยต่อ = ยอดจริงที่มี + ที่เหลือเป็นคาดการณ์)
+ * สัปดาห์ที่ข้อมูลไม่ครบ 7 วันจะไม่แสดง เพราะยอดต่ำกว่าปกติจะหลอกตา (กับดักเดียวกับเดือนที่ไม่ครบ)
+ */
+export function weeklyView(series, fc) {
+  const weeks = new Map();
+  const bucket = (date) => {
+    const k = weekStart(date);
+    if (!weeks.has(k)) weeks.set(k, { aDays: 0, aSum: 0, fDays: 0, fSum: 0 });
+    return weeks.get(k);
+  };
+  for (const s of series) { const b = bucket(s.date); b.aDays++; b.aSum += s.revenue; }
+  for (const f of fc) { const b = bucket(f.date); b.fDays++; b.fSum += f.forecast; }
+  return [...weeks.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([week, b]) => ({
+      week,
+      actual: b.aDays === 7 ? b.aSum : undefined,
+      forecast: b.fDays > 0 && b.aDays + b.fDays === 7 ? b.aSum + b.fSum : undefined,
+    }))
+    .filter((w) => w.actual !== undefined || w.forecast !== undefined);
+}
+
+/**
+ * MAPE รายสัปดาห์จากผล backtest().test (แต่ละแถว { date, actual, seasonal, flat })
+ * ใช้เฉพาะสัปดาห์จันทร์–อาทิตย์ที่อยู่ในช่วงทดสอบครบ 7 วัน
+ * @returns {{ weeks: {week, actual, seasonal, flat}[], mapeSeasonal: number|null, mapeFlat: number|null }}
+ *   mape เป็น null ถ้าช่วงทดสอบไม่มีสัปดาห์ครบเลย
+ */
+export function weeklyBacktest(test) {
+  const groups = new Map();
+  for (const t of test) {
+    const k = weekStart(t.date);
+    const g = groups.get(k) ?? { week: k, days: 0, actual: 0, seasonal: 0, flat: 0 };
+    g.days++; g.actual += t.actual; g.seasonal += t.seasonal; g.flat += t.flat;
+    groups.set(k, g);
+  }
+  const weeks = [...groups.values()].filter((g) => g.days === 7).sort((a, b) => a.week.localeCompare(b.week));
+  if (!weeks.length) return { weeks, mapeSeasonal: null, mapeFlat: null };
+  const actual = weeks.map((w) => w.actual);
+  return {
+    weeks,
+    mapeSeasonal: mape(actual, weeks.map((w) => w.seasonal)),
+    mapeFlat: mape(actual, weeks.map((w) => w.flat)),
+  };
+}

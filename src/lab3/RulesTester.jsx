@@ -3,7 +3,7 @@
 // ออกแบบให้ไม่ทำลายข้อมูลจริง: เอกสารที่หลุดเข้าไปจะมีวันที่ปี 2000 (อยู่นอกทุกช่วงใน Dashboard)
 // และการแก้/ลบจะทำกับเอกสารที่ไม่มีอยู่จริง
 import { useEffect, useState } from "react";
-import { doc, setDoc, updateDoc, deleteDoc, getDocs, collection, query, limit, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, collection, query, limit, serverTimestamp } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "./firebase.js";
 
@@ -25,10 +25,13 @@ const SIGNED_IN = [
   { name: "แก้ไขยอดขายที่บันทึกแล้ว", why: "update ต้องถูกปิด", run: () => updateDoc(doc(db, "sales", "rules-test-no-such-doc"), { qty: 999 }), notFoundMeansOpen: true },
   { name: "ลบยอดขาย", why: "delete ต้องถูกปิด", run: () => deleteDoc(doc(db, "sales", "rules-test-no-such-doc")) },
   { name: "แก้ราคาเมนูจากหน้าเว็บ", why: "products เขียนได้เฉพาะ admin script", run: () => updateDoc(doc(db, "products", "rules-test-no-such-product"), { price: 1 }), notFoundMeansOpen: true },
+  // ทดสอบกับเอกสารที่ไม่มีอยู่จริง จึงไม่เสี่ยงทับ analytics/rfm ตัวจริงถ้า rules รั่ว
+  { name: "ปลอมผลวิเคราะห์", why: "analytics เขียนได้เฉพาะ pipeline (firebase-admin) ไม่ใช่หน้าเว็บ", run: () => updateDoc(doc(db, "analytics", "rules-test-no-such-doc"), { segments: [] }), notFoundMeansOpen: true },
 ];
 const SIGNED_OUT = [
   { name: "อ่านยอดขายโดยไม่ล็อกอิน", why: "ต้องล็อกอินก่อนอ่าน", run: () => getDocs(query(collection(db, "sales"), limit(1))) },
   { name: "บันทึกยอดขายโดยไม่ล็อกอิน", why: "ต้องล็อกอินก่อนเขียน", run: () => setDoc(doc(db, "sales", newId(0)), base("no-login")) },
+  { name: "อ่านผลวิเคราะห์ลูกค้าโดยไม่ล็อกอิน", why: "analytics อ่านได้เมื่อล็อกอินเท่านั้น", run: () => getDoc(doc(db, "analytics", "rfm")) },
 ];
 
 const withTimeout = (p, ms = 10000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej({ code: "timeout" }), ms))]);

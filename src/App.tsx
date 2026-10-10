@@ -34,6 +34,9 @@ import {
 import Lab2Page from './lab2/Lab2Page.jsx'
 import LiveTab from './lab3/LiveTab.jsx'
 import RulesTester from './lab3/RulesTester.jsx'
+import CustomersTab from './lab4/CustomersTab.jsx'
+import ForecastTab from './lab4/ForecastTab.jsx'
+import { analyticsSource } from './lab4/sources.js'
 import MenuSalesCard from './overview/MenuSalesCard.tsx'
 import CustomersPage from './customers/CustomersPage.tsx'
 import { Card, GradientTile, LegendDot } from './components/ui.tsx'
@@ -47,12 +50,17 @@ type Product = { product_id: string; product_name: string; category: string; pri
 const TABS = [
   { id: 'overview', label: 'ภาพรวม' },
   { id: 'customers', label: 'ข้อมูลลูกค้า' },
+  { id: 'insights', label: 'ลูกค้า & เมนู' },
+  { id: 'forecast', label: 'พยากรณ์ & ผิดปกติ' },
   { id: 'lab2', label: 'Lab 2.2 · ซ่อมกราฟ' },
   { id: 'live', label: 'ยอดขายสด' },
   { id: 'rules', label: 'ทดสอบ Rules' },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 const tabFromHash = (): TabId => TABS.find((t) => `#${t.id}` === window.location.hash)?.id ?? 'overview'
+
+// แหล่งข้อมูลของแท็บ Lab 4: ?demo = คำนวณในเบราว์เซอร์ · ไม่ใส่ = อ่านจาก Firestore collection analytics
+const analyticsSrc = analyticsSource()
 
 const PAYMENT_COLORS = [PINK, PURPLE, BLUE, AMBER, TEAL] // ลำดับคงที่ ตามอันดับยอดขาย (5 วิธีชำระ)
 const DAILY_COLOR = MUTED // เส้นรายวันแบบจาง
@@ -184,6 +192,14 @@ function App() {
         {tab === 'customers' ? (
           <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
             <CustomersPage rows={rows} />
+          </main>
+        ) : tab === 'insights' ? (
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
+            <CustomersTab source={analyticsSrc} />
+          </main>
+        ) : tab === 'forecast' ? (
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
+            <ForecastTab source={analyticsSrc} />
           </main>
         ) : tab === 'rules' ? (
           <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">

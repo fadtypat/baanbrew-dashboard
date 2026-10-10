@@ -4,7 +4,8 @@ import {
   ResponsiveContainer, BarChart, Bar, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   LabelList, Cell, ReferenceLine,
 } from "recharts";
-import { AnalyticsShell, Card, Pending, Insight, GREEN, MAIN, MUTED, INK, pct, thaiMonth } from "./ui.jsx";
+import { AnalyticsShell, Card, Pending, Insight, RAMP, MAIN, MUTED, INK, pct, thaiMonth } from "./ui.jsx";
+import { AXIS_TICK, GRID_COLOR, TOOLTIP_STYLE } from "../components/theme.ts";
 import { useAnalytics } from "./useAnalytics.js";
 import { SEGMENTS } from "../lib/analytics/rfm.js";
 import { fmtBaht } from "../lib/metrics.js";
@@ -22,16 +23,16 @@ function RfmCard({ rfm, onPick, picked }) {
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} layout="vertical" margin={{ left: 8, right: 48 }} barGap={2}>
-            <CartesianGrid horizontal={false} stroke="#eee" />
-            <XAxis type="number" tickFormatter={(v) => pct(v)} domain={[0, 0.45]} tick={{ fontSize: 12 }} />
-            <YAxis type="category" dataKey="label" width={96} tick={{ fontSize: 13 }} />
-            <Tooltip formatter={(v, n) => [pct(v, 1), n]} cursor={{ fill: "#f5f5f4" }} />
+            <CartesianGrid horizontal={false} stroke={GRID_COLOR} />
+            <XAxis type="number" tickFormatter={(v) => pct(v)} domain={[0, 0.45]} tick={AXIS_TICK} />
+            <YAxis type="category" dataKey="label" width={96} tick={{ ...AXIS_TICK, fontSize: 13 }} />
+            <Tooltip {...TOOLTIP_STYLE} formatter={(v, n) => [pct(v, 1), n]} cursor={{ fill: "#faf5ff" }} />
             <Legend wrapperStyle={{ fontSize: 13 }} />
             <Bar name="% ลูกค้า" dataKey="customerShare" fill={MUTED} radius={[0, 4, 4, 0]} isAnimationActive={false}
                  onClick={(d) => onPick?.(d.payload?.segment ?? d.segment)} style={{ cursor: "pointer" }} />
             <Bar name="% ยอดซื้อ" dataKey="revenueShare" fill={MAIN} radius={[0, 4, 4, 0]} isAnimationActive={false}
                  onClick={(d) => onPick?.(d.payload?.segment ?? d.segment)} style={{ cursor: "pointer" }}>
-              {data.map((d) => <Cell key={d.segment} fill={picked && picked !== d.segment ? GREEN[2] : MAIN} />)}
+              {data.map((d) => <Cell key={d.segment} fill={picked && picked !== d.segment ? RAMP[2] : MAIN} />)}
               <LabelList dataKey="revenueShare" position="right" formatter={(v) => pct(v)} style={{ fontSize: 12, fill: INK }} />
             </Bar>
           </BarChart>
@@ -43,15 +44,15 @@ function RfmCard({ rfm, onPick, picked }) {
       </Insight>
       <div className="mt-3 overflow-x-auto">
         <table className="w-full min-w-[560px] text-sm">
-          <thead className="text-left text-stone-500"><tr><th className="py-1 font-medium">กลุ่ม</th><th className="text-right font-medium">ลูกค้า</th><th className="text-right font-medium">ยอดซื้อ</th><th className="pl-4 font-medium">ควรทำอะไร</th></tr></thead>
+          <thead className="bg-[#2d2a3e] text-left text-xs text-white"><tr><th className="rounded-l-lg px-3 py-2.5 font-medium">กลุ่ม</th><th className="px-3 text-right font-medium">ลูกค้า</th><th className="px-3 text-right font-medium">ยอดซื้อ</th><th className="rounded-r-lg px-3 font-medium">ควรทำอะไร</th></tr></thead>
           <tbody>
             {data.map((d) => (
               <tr key={d.segment} onClick={() => onPick?.(d.segment)}
-                  className={`cursor-pointer border-t border-stone-100 hover:bg-stone-50 ${picked === d.segment ? "bg-emerald-50" : ""}`}>
-                <td className="py-1.5">{d.label} <span className="text-stone-400">{d.segment}</span></td>
-                <td className="text-right tabular-nums">{d.customers.toLocaleString()}</td>
-                <td className="text-right tabular-nums">{fmtBaht(d.revenue)}</td>
-                <td className="pl-4 text-stone-600">{SEG_TH[d.segment].action}</td>
+                  className={`cursor-pointer border-t border-stone-100 hover:bg-[#faf5ff] ${picked === d.segment ? "bg-pink-50/60" : ""}`}>
+                <td className="px-3 py-2.5">{d.label} <span className="text-stone-400">{d.segment}</span></td>
+                <td className="px-3 text-right tabular-nums">{d.customers.toLocaleString()}</td>
+                <td className="px-3 text-right tabular-nums">{fmtBaht(d.revenue)}</td>
+                <td className="px-3 text-stone-600">{SEG_TH[d.segment].action}</td>
               </tr>
             ))}
           </tbody>
@@ -65,7 +66,7 @@ function RfmCard({ rfm, onPick, picked }) {
 function CohortCard({ cohort }) {
   if (cohort.error) return <Card title="Cohort · การกลับมาซื้อซ้ำ"><Pending lab="Lab 4.2" error={cohort.error} /></Card>;
   const MAXK = 12;
-  const shade = (v) => GREEN[Math.min(5, Math.floor(v * 6))];
+  const shade = (v) => RAMP[Math.min(5, Math.floor(v * 6))];
   const avg1 = (() => {
     const xs = cohort.cohorts.filter((c) => c.retention.length > 2).map((c) => c.retention[1]);
     return xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -119,16 +120,16 @@ function AbcCard({ abc }) {
   const items = abc.items;
   const nA = items.filter((i) => i.cls === "A").length;
   const C = items.filter((i) => i.cls === "C");
-  const fill = { A: MAIN, B: GREEN[2], C: "#d6d3d1" };
+  const fill = { A: MAIN, B: RAMP[2], C: "#d6d3d1" };
   return (
     <Card title="Pareto · ABC ของเมนู" sub="แท่ง = สัดส่วนยอดขายแต่ละเมนู · เส้น = ยอดสะสม · แกนเดียวกันเป็น %">
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={items} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid vertical={false} stroke="#eee" />
-            <XAxis dataKey="rank" tick={{ fontSize: 11 }} interval={4} label={{ value: "อันดับเมนู", position: "insideBottomRight", offset: -2, fontSize: 12 }} />
-            <YAxis tickFormatter={(v) => pct(v)} domain={[0, 1]} width={44} tick={{ fontSize: 12 }} />
-            <Tooltip labelFormatter={(r) => { const it = items[r - 1]; return `#${r} ${it.name} · กลุ่ม ${it.cls}`; }}
+            <CartesianGrid vertical={false} stroke={GRID_COLOR} />
+            <XAxis dataKey="rank" tick={{ ...AXIS_TICK, fontSize: 11 }} interval={4} label={{ value: "อันดับเมนู", position: "insideBottomRight", offset: -2, fontSize: 12 }} />
+            <YAxis tickFormatter={(v) => pct(v)} domain={[0, 1]} width={44} tick={AXIS_TICK} />
+            <Tooltip {...TOOLTIP_STYLE} labelFormatter={(r) => { const it = items[r - 1]; return `#${r} ${it.name} · กลุ่ม ${it.cls}`; }}
                      formatter={(v, n) => [pct(v, 1), n]} />
             <ReferenceLine y={0.8} stroke={MUTED} strokeDasharray="4 4" label={{ value: "80%", position: "right", fontSize: 11, fill: INK }} />
             <Bar name="สัดส่วนยอดขาย" dataKey="share" radius={[4, 4, 0, 0]} isAnimationActive={false}>
@@ -155,9 +156,9 @@ export default function CustomersTab({ source }) {
   const state = useAnalytics(source);
   const [picked, setPicked] = useState(null);
   return (
-    <AnalyticsShell source={source} state={state} title="ลูกค้าและเมนู">
+    <AnalyticsShell source={source} state={state} title="ลูกค้า & เมนู">
       {(d) => (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           <RfmCard rfm={d.rfm} picked={picked} onPick={(s) => setPicked((p) => (p === s ? null : s))} />
           {/* Lab 4.1B: แสดงรายชื่อลูกค้าในกลุ่มที่คลิก (picked) + ปุ่มดาวน์โหลด CSV */}
           <CohortCard cohort={d.cohort} />

@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Papa from "papaparse";
-import { prepareRows } from "../src/lib/metrics.js";
+import { parseSales, prepareRows } from "../src/lib/metrics.js";
 import { buildAnalytics, shiftRows, shiftHolidays, weeklyShift } from "../src/lib/analytics/build.js";
 import { topAnomalies } from "../src/lib/analytics/anomaly.js";
 import { todayBangkok } from "../src/lab3/time.js";
@@ -24,7 +24,8 @@ const today = todayBangkok();
 const raw = csv("public/sales.csv");
 const bad = raw.find((r) => !/^20\d\d-\d\d-\d\dT/.test(r.datetime ?? ""));
 if (bad) { console.error(`❌ public/sales.csv ยังไม่สะอาด เช่น ${bad.order_id} "${bad.datetime}" ใช้ไฟล์จาก Lab 2.1`); process.exit(1); }
-const history = prepareRows(raw);
+// parseSales เติม date และแปลง qty/unit_price เป็นตัวเลข · prepareRows เติม revenue
+const history = prepareRows(parseSales(fs.readFileSync("public/sales.csv", "utf8")));
 const products = csv("public/products.csv");
 const holidaysRaw = fs.existsSync("public/thai_holidays.csv")
   ? Object.fromEntries(csv("public/thai_holidays.csv").map((h) => [h.date, h.holiday])) : {};

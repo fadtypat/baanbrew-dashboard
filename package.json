@@ -11,7 +11,9 @@
     "test": "vitest run",
     "seed:dry": "node scripts/seed.mjs --dry-run",
     "seed": "node --env-file=.env scripts/seed.mjs",
-    "verify-import": "node --env-file=.env scripts/verify-import.mjs"
+    "verify-import": "node --env-file=.env scripts/verify-import.mjs",
+    "analytics:dry": "node scripts/build-analytics.mjs --dry-run",
+    "analytics": "node --env-file=.env scripts/build-analytics.mjs"
   },
   "dependencies": {
     "firebase": "^12.19.0",

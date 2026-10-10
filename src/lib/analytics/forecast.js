@@ -2,8 +2,6 @@
 // Lab 4.4 · พยากรณ์ยอดขายแบบอธิบายได้ และวัดความแม่นด้วยการย้อนทดสอบ (backtest)
 import { addDays } from "../../lab3/time.js";
 
-const dow = (ymd) => new Date(ymd + "T00:00:00Z").getUTCDay(); // 0 = อาทิตย์
-
 /** ค่าเฉลี่ยยอดขายวันเดียวกันของสัปดาห์ K ครั้งล่าสุด (ฤดูกาลรายสัปดาห์) */
 export function seasonalForecast(series, horizon, K = 8) {
   const byDate = new Map(series.map((s) => [s.date, s.revenue]));

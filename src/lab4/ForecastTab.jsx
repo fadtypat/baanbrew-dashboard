@@ -32,8 +32,7 @@ function Pills({ options, value, onChange }) {
   );
 }
 
-function ForecastCard({ daily }) {
-  const [branch, setBranch] = useState(null);
+function ForecastCard({ daily, branch, setBranch }) {
   const [view, setView] = useState("daily"); // daily | weekly
   const result = useMemo(() => tryRun(() => {
     const series = toSeries(daily, branch);
@@ -56,8 +55,9 @@ function ForecastCard({ daily }) {
     }
     const nextWeek = wkRows.find((w) => w.actual === undefined && w.forecast !== undefined);
     const wkBt = weeklyBacktest(bt.test);
+    const inBand = bt.test.filter((t) => t.actual >= t.seasonal * (1 - bt.band) && t.actual <= t.seasonal * (1 + bt.band)).length;
     return {
-      bt, chart, next7, lastDate: last.date,
+      bt, chart, next7, lastDate: last.date, inBand,
       weekly: { rows: wkRows, lastWeek: lastActual >= 0 ? wkRows[lastActual].week : null, nextWeek, bt: wkBt },
     };
   }), [daily, branch]);
@@ -102,8 +102,85 @@ function ForecastCard({ daily }) {
               : `${branch ?? "ภาพรวม"}: สองวิธีแม่นพอ ๆ กัน (${r.bt.mapeSeasonal.toFixed(0)}% กับ ${r.bt.mapeFlat.toFixed(0)}%) ${branch ? "" : "เพราะสาขาออฟฟิศกับห้างขายดีคนละวัน พอรวมกันรูปแบบรายสัปดาห์จึงหักล้างกัน"}`}
             {" "}ใช้วางแผนสต็อกและกะพนักงานรายสัปดาห์ได้ แต่ไม่ควรใช้ตัดสินยอดรายวันของสาขาเดียว
           </Insight>
+          <BandNote bt={r.bt} inBand={r.inBand} />
         </>
       )}
+    </Card>
+  );
+}
+
+/** อธิบายว่าแถบ "ช่วงคาดการณ์" ในกราฟมาจากอะไร */
+function BandNote({ bt, inBand }) {
+  const pctBand = (bt.band * 100).toFixed(0);
+  return (
+    <div className="mt-3 rounded-xl border border-[#ece4f6] p-3 text-xs leading-relaxed text-stone-500">
+      <p className="font-medium text-stone-600">แถบ “ช่วงคาดการณ์” คำนวณจากอะไร</p>
+      <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+        <li>ย้อนทดสอบ: ซ่อน {HORIZON} วันสุดท้าย พยากรณ์ด้วยวิธีเดียวกัน แล้วเทียบกับยอดจริงรายวัน</li>
+        <li>วัด % ความคลาดเคลื่อนของแต่ละวัน = (ยอดจริง − คาดการณ์) ÷ ยอดจริง (ข้ามวันที่ยอดจริงเป็น 0)</li>
+        <li>แถบ = ยอดคาดการณ์ × (1 ± <b>1.28 × ส่วนเบี่ยงเบนมาตรฐาน</b> ของ % ที่วัดได้) ได้ ±{pctBand}% ของยอดคาดการณ์ในแต่ละวัน (1.28 คือค่าที่ครอบคลุมราว 80% เมื่อความคลาดเคลื่อนกระจายแบบระฆังคว่ำ)</li>
+      </ol>
+      <p className="mt-1">
+        ในช่วงย้อนทดสอบ ยอดจริงอยู่ในแถบ {inBand} จาก {bt.test.length} วัน (ใช้ข้อมูลชุดเดียวกับที่ใช้คำนวณแถบ จึงดูดีกว่าการใช้งานจริงเล็กน้อย) ·
+        แถบนี้ใช้สัดส่วนเดียวกันทุกวัน จึงไม่รวมวันหยุดหรือเหตุการณ์พิเศษ และไม่ใช่ช่วงความเชื่อมั่นทางสถิติเต็มรูปแบบ
+      </p>
+    </div>
+  );
+}
+
+const PREP_TOP = 10;
+
+/** ควรเตรียมของเท่าไร: ยอดคาดการณ์ 7 วัน × สัดส่วนยอดขายของแต่ละเมนูกลุ่ม A */
+function PrepCard({ daily, abc, branch }) {
+  const [all, setAll] = useState(false);
+  const result = useMemo(() => tryRun(() => {
+    const fc = seasonalForecast(toSeries(daily, branch), 7);
+    return { next7: fc.reduce((s, f) => s + f.forecast, 0), from: fc[0].date, to: fc[fc.length - 1].date };
+  }), [daily, branch]);
+
+  if (abc.error) return <Card title="ควรเตรียมของเท่าไร"><Pending lab="Lab 4.2" error={abc.error} /></Card>;
+  if (result.error) return <Card title="ควรเตรียมของเท่าไร"><Pending lab="Lab 4.4" error={result.error} /></Card>;
+
+  const { next7, from, to } = result.value;
+  const menus = abc.items.filter((i) => i.cls === "A"); // เรียงตามยอดขายมากไปน้อยอยู่แล้ว
+  const shareA = menus.reduce((s, i) => s + i.share, 0);
+  const shown = all ? menus : menus.slice(0, PREP_TOP);
+  return (
+    <Card title="ควรเตรียมของเท่าไร"
+          sub={`ยอดคาดการณ์ 7 วัน (${shortDay(from)} – ${shortDay(to)}) × สัดส่วนยอดขายของเมนูกลุ่ม A · ${branch ?? "ทุกสาขารวม"}`}>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Stat label="ยอดคาดการณ์ 7 วัน" value={fmtBaht(next7)} />
+        <Stat label={`เมนูกลุ่ม A ${menus.length} เมนู ทำยอดรวม`} value={fmtBaht(next7 * shareA)} note={`${(shareA * 100).toFixed(1)}% ของยอดขาย`} />
+        <Stat label="เมนูที่ควรเตรียมมากสุด" value={menus[0]?.name ?? "–"} note={menus[0] ? `ราว ${fmtBaht(next7 * menus[0].share)}` : ""} />
+      </div>
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[480px] text-sm">
+          <thead className="bg-[#2d2a3e] text-left text-xs text-white">
+            <tr><th className="rounded-l-lg px-3 py-2.5 font-medium">#</th><th className="font-medium">เมนู</th><th className="font-medium">หมวด</th>
+              <th className="text-right font-medium">สัดส่วนยอดขาย</th><th className="rounded-r-lg px-3 text-right font-medium">ยอดที่ควรเตรียมรองรับ 7 วัน</th></tr>
+          </thead>
+          <tbody>
+            {shown.map((i) => (
+              <tr key={i.product_id} className="border-t border-stone-100">
+                <td className="px-3 py-2.5 text-stone-400">{i.rank}</td>
+                <td className="font-medium">{i.name}</td>
+                <td className="text-stone-500">{i.category}</td>
+                <td className="text-right tabular-nums">{(i.share * 100).toFixed(1)}%</td>
+                <td className="px-3 text-right tabular-nums">{fmtBaht(next7 * i.share)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {menus.length > PREP_TOP && (
+        <button type="button" onClick={() => setAll((v) => !v)} className="mt-3 rounded-lg px-3 py-1.5 text-sm text-stone-600 ring-1 ring-stone-200 hover:bg-stone-100">
+          {all ? `แสดงแค่ ${PREP_TOP} อันดับแรก` : `แสดงทั้ง ${menus.length} เมนู`}
+        </button>
+      )}
+      <Insight>
+        ตัวเลขเป็น <b>ยอดขายเป็นบาท</b> ไม่ใช่จำนวนแก้ว/ชิ้นหรือกิโลวัตถุดิบ เพราะผลวิเคราะห์ยังไม่เก็บราคาต่อหน่วยและสูตรของแต่ละเมนู ถ้าจะแปลงเป็นของที่ต้องซื้อ ให้หารด้วยราคาเมนู แล้วคูณสูตร ·
+        สัดส่วนคิดจากยอดขายทุกสาขาตลอดช่วงข้อมูล{branch ? ` ไม่ได้แยกเฉพาะสาขา${branch}` : ""} และเป็นการประมาณจากค่าเฉลี่ย ควรเผื่อช่วงวันที่ขายดีด้วย
+      </Insight>
     </Card>
   );
 }
@@ -206,6 +283,7 @@ function AnomalyCard({ daily, holidays }) {
 
 export default function ForecastTab({ source }) {
   const state = useAnalytics(source);
+  const [branch, setBranch] = useState(null); // ใช้ร่วมกันระหว่างการ์ดพยากรณ์และการ์ดเตรียมของ
   return (
     <AnalyticsShell source={source} state={state} title="พยากรณ์ & ผิดปกติ">
       {(d) => d.daily.error ? <Pending lab="pipeline" error={d.daily.error} /> : (
@@ -215,7 +293,8 @@ export default function ForecastTab({ source }) {
               🚨 ยอดวันล่าสุดผิดปกติ: {d.meta.alerts.map((a) => `${a.branch} ${fmtBaht(a.actual)} (ปกติ ${fmtBaht(a.expected)})`).join(", ")}
             </p>
           )}
-          <ForecastCard daily={d.daily.rows} />
+          <ForecastCard daily={d.daily.rows} branch={branch} setBranch={setBranch} />
+          <PrepCard daily={d.daily.rows} abc={d.abc} branch={branch} />
           <AnomalyCard daily={d.daily.rows} holidays={d.meta.holidays ?? {}} />
         </div>
       )}

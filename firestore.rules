@@ -24,6 +24,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ผลวิเคราะห์ (RFM, Cohort, ABC, ยอดรายวัน): ล็อกอินแล้วอ่านได้ แต่เขียนจากหน้าเว็บไม่ได้เลย
+    // pipeline (scripts/build-analytics.mjs) ใช้ firebase-admin จึงไม่ติด rules
+    match /analytics/{docId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     match /sales/{saleId} {
       // อ่านยอดขายได้เมื่อล็อกอิน
       allow read: if signedIn();

@@ -1,32 +1,35 @@
-# React + TypeScript + Vite
+# Day 4: Advanced Data Analytics · บ้านบรู
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+เสาร์ 10 ต.ค. 2026 · ต่อจาก Day 3 (Firestore + Vercel ผ่าน Claude Code และ GitHub)
 
-Currently, two official plugins are available:
+เริ่มที่ **`LAB4_GUIDE.md`** · prompt ทั้งหมดอยู่ใน **`PROMPTS_LAB4.md`** · กติกาที่ Claude Code อ่านอัตโนมัติอยู่ใน **`CLAUDE.md`**
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm test                 # ตอนเริ่มจะมี test แดงของ rfm, cohort, forecast, anomaly เป็นเรื่องปกติ
+npm run dev              # แล้วเปิด http://localhost:5173/?demo เพื่อลองโดยไม่ใช้โควตา Firebase
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## สิ่งที่เพิ่มจาก Day 3
+
+| ไฟล์ | Lab | สถานะ |
+|---|---|---|
+| `src/lib/analytics/rfm.js` | 4.1 | **คุณเขียน** ให้ผ่าน `rfm.test.js` |
+| `src/lib/analytics/cohort.js` | 4.2 | **คุณเขียน** ให้ผ่าน `cohort.test.js` |
+| `src/lib/analytics/abc.js` | 4.2 | ตัวอย่างที่ทำเสร็จแล้ว |
+| `src/lib/analytics/forecast.js` | 4.4 | **คุณเขียน** (`flatForecast` เป็นตัวอย่าง) |
+| `src/lib/analytics/anomaly.js` | 4.5 | **คุณเขียน** `scoreAnomalies` |
+| `src/lib/analytics/realdata.test.js` | ทั้งวัน | ตรวจกับข้อมูลจริง ผ่านเมื่อทุกฟังก์ชันเสร็จ |
+| `src/lab4/CustomersTab.jsx`, `ForecastTab.jsx` | 4.1–4.5 | หน้าจอพร้อมใช้ คุณเพิ่มการเจาะดู (4.1B) และการซูม (4.5B) |
+| `scripts/build-analytics.mjs` | 4.2, 4.6 | pipeline พร้อมใช้ |
+| `.github/workflows/analytics.yml` | 4.6 | รันทุกเช้า 06:15 เวลาไทย |
+| `firestore.rules` | 4.2 | **คุณเพิ่ม** สิทธิ์ของ collection `analytics` |
+| `CLAUDE.md` | ทั้งวัน | กติกาของโปรเจกต์สำหรับ Claude Code |
+| `public/thai_holidays.csv` | 4.5 | วันหยุดราชการ |
+
+## คำสั่งใหม่
+
+```bash
+npm run analytics:dry    # คำนวณผลวิเคราะห์และแสดงผล ไม่เขียน ไม่ต้องมี key
+npm run analytics        # เขียน 5 เอกสารลง Firestore (ใช้ key ใน secrets/ เดียวกับ Day 3)
+```

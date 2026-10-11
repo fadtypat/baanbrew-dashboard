@@ -34,7 +34,8 @@ export function parseSales(csvText) {
  * - hour    = ชั่วโมงตามเวลาไทย ตัดจาก datetime ตรง ๆ
  */
 export function prepareRows(rows) {
-  return rows.map((r) => ({ ...r, revenue: lineTotal(r), hour: Number(r.datetime.slice(11, 13)) }))
+  // date: แถวจาก parseSales() มีอยู่แล้ว · ถ้าเป็นแถวดิบจาก CSV (เช่น scripts/ และ test ข้อมูลจริง) ตัดจาก datetime ตรง ๆ
+  return rows.map((r) => ({ ...r, date: r.date ?? r.datetime.slice(0, 10), revenue: lineTotal(r), hour: Number(r.datetime.slice(11, 13)) }))
 }
 
 /** ยอดขายของ 1 แถว = qty × unit_price */
